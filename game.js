@@ -292,16 +292,154 @@ const player = {
     imageLoaded: false
 };
 
-// Load Kiro ghost sprite
-const kiroImage = new Image();
-kiroImage.src = 'kiro-bodies/kiro-classic.png';
-kiroImage.onload = () => {
-    player.image = kiroImage;
-    player.imageLoaded = true;
+// Sprite Manager
+const SpriteManager = {
+    sprites: {},
+    currentSprite: 'kiro-classic.png',
+    availableSprites: [
+        'kiro-classic.png',
+        'kiro-boo.png',
+        'kiro-bow.png',
+        'kiro-flower.png',
+        'kiro-glasses.png',
+        'kiro-tophat.png'
+    ],
+    spritesLoaded: false,
+    selectedSpriteUI: null, // Track which sprite is being hovered/selected in UI
+    
+    // Load all available sprites
+    loadAllSprites() {
+        return Promise.all(
+            this.availableSprites.map(spriteName => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.src = `kiro-bodies/${spriteName}`;
+                    img.onload = () => {
+                        this.sprites[spriteName] = img;
+                        resolve();
+                    };
+                    img.onerror = () => {
+                        console.warn(`Failed to load sprite: ${spriteName}`);
+                        resolve(); // Continue even if one sprite fails
+                    };
+                });
+            })
+        ).then(() => {
+            this.spritesLoaded = true;
+            // Load saved sprite preference or default
+            const savedSprite = StorageManager.getSavedSprite();
+            this.selectSprite(savedSprite);
+        });
+    },
+    
+    // Select a sprite and update player
+    selectSprite(spriteName) {
+        // Validate sprite exists
+        if (!this.availableSprites.includes(spriteName)) {
+            console.warn(`Invalid sprite: ${spriteName}, defaulting to kiro-classic.png`);
+            spriteName = 'kiro-classic.png';
+        }
+        
+        this.currentSprite = spriteName;
+        
+        // Update player image
+        if (this.sprites[spriteName]) {
+            player.image = this.sprites[spriteName];
+            player.imageLoaded = true;
+        } else {
+            // Fallback to classic if sprite not loaded
+            if (this.sprites['kiro-classic.png']) {
+                player.image = this.sprites['kiro-classic.png'];
+                player.imageLoaded = true;
+            }
+        }
+        
+        // Save preference to localStorage
+        StorageManager.setSavedSprite(spriteName);
+    },
+    
+    // Get current sprite image
+    getCurrentSpriteImage() {
+        return this.sprites[this.currentSprite] || null;
+    },
+    
+    // Check if a point is inside a sprite selector thumbnail
+    isPointInSprite(x, y, spriteIndex) {
+        const startX = canvas.width / 2 - 180;
+        const startY = canvas.height / 2 + 120;
+        const thumbnailSize = 50;
+        const spacing = 10;
+        
+        const col = spriteIndex % 3;
+        const row = Math.floor(spriteIndex / 3);
+        
+        const thumbX = startX + col * (thumbnailSize + spacing);
+        const thumbY = startY + row * (thumbnailSize + spacing);
+        
+        return x >= thumbX && x <= thumbX + thumbnailSize &&
+               y >= thumbY && y <= thumbY + thumbnailSize;
+    },
+    
+    // Handle click on sprite selector
+    handleSpriteClick(x, y) {
+        if (gameState !== 'start') return false;
+        
+        for (let i = 0; i < this.availableSprites.length; i++) {
+            if (this.isPointInSprite(x, y, i)) {
+                this.selectSprite(this.availableSprites[i]);
+                return true;
+            }
+        }
+        return false;
+    },
+    
+    // Draw sprite selector UI on start screen
+    drawSpriteSelector(ctx) {
+        const startX = canvas.width / 2 - 180;
+        const startY = canvas.height / 2 + 120;
+        const thumbnailSize = 50;
+        const spacing = 10;
+        
+        // Title
+        ctx.fillStyle = COLORS.white;
+        ctx.font = '20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Choose Your Character:', canvas.width / 2, startY - 20);
+        
+        // Draw sprite thumbnails in a grid (3 columns)
+        this.availableSprites.forEach((spriteName, index) => {
+            const col = index % 3;
+            const row = Math.floor(index / 3);
+            
+            const x = startX + col * (thumbnailSize + spacing);
+            const y = startY + row * (thumbnailSize + spacing);
+            
+            // Highlight currently selected sprite
+            if (spriteName === this.currentSprite) {
+                ctx.strokeStyle = COLORS.purple;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x - 4, y - 4, thumbnailSize + 8, thumbnailSize + 8);
+            } else {
+                // Border for non-selected sprites
+                ctx.strokeStyle = COLORS.prey300;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x - 2, y - 2, thumbnailSize + 4, thumbnailSize + 4);
+            }
+            
+            // Draw sprite thumbnail
+            if (this.sprites[spriteName]) {
+                ctx.drawImage(this.sprites[spriteName], x, y, thumbnailSize, thumbnailSize);
+            } else {
+                // Placeholder if sprite not loaded
+                ctx.fillStyle = COLORS.prey300;
+                ctx.fillRect(x, y, thumbnailSize, thumbnailSize);
+            }
+        });
+    }
 };
-kiroImage.onerror = () => {
-    console.log('Kiro sprite not found, using placeholder');
-};
+
+// Initialize sprite manager
+SpriteManager.loadAllSprites();
 
 // Obstacles array
 let obstacles = [];
@@ -325,7 +463,17 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-canvas.addEventListener('click', () => {
+canvas.addEventListener('click', (e) => {
+    // Get click coordinates relative to canvas
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Check if clicking on sprite selector (only on start screen)
+    if (gameState === 'start' && SpriteManager.handleSpriteClick(x, y)) {
+        return; // Sprite was selected, don't start game
+    }
+    
     handleInput();
 });
 
@@ -483,15 +631,20 @@ function drawStartScreen() {
     ctx.fillStyle = COLORS.white;
     ctx.font = 'bold 48px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('GRAVITY SWITCHER', canvas.width / 2, canvas.height / 2 - 50);
+    ctx.fillText('GRAVITY SWITCHER', canvas.width / 2, canvas.height / 2 - 100);
 
     ctx.fillStyle = COLORS.purple;
     ctx.font = '24px sans-serif';
-    ctx.fillText('Press SPACE or click to start!', canvas.width / 2, canvas.height / 2 + 20);
+    ctx.fillText('Press SPACE or click to start!', canvas.width / 2, canvas.height / 2 - 30);
 
     ctx.fillStyle = COLORS.prey300;
     ctx.font = '18px sans-serif';
-    ctx.fillText('Press SPACE to flip gravity', canvas.width / 2, canvas.height / 2 + 80);
+    ctx.fillText('Press SPACE to flip gravity', canvas.width / 2, canvas.height / 2 + 10);
+    
+    // Draw sprite selector
+    if (SpriteManager.spritesLoaded) {
+        SpriteManager.drawSpriteSelector(ctx);
+    }
 }
 
 // Draw game

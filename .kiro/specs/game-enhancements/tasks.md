@@ -91,10 +91,10 @@
   - **Property 17: Confetti physics application**
   - **Validates: Requirements 5.4**
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement sprite selection system with persistence
+- [x] 5. Implement sprite selection system with persistence
   - Create SpriteManager object to load all available Kiro sprites
   - Build sprite selector UI on start screen with thumbnail previews
   - Add click handlers for sprite selection
